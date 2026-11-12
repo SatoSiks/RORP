@@ -1,0 +1,248 @@
+# ============================================================
+# RoRP — МЕДИЦИНСКАЯ СИСТЕМА (ЭТАП 1.1)
+# Skript 2.12.2 / Paper 1.20.1
+# Без дополнительных аддонов Skript
+#
+# Команды:
+# /medcard                 — открыть GUI медицинской карты
+# /medcard sell <игрок>    — предложить игроку купить карту за $100
+# /medcard accept          — принять предложение
+# /medcard decline         — отклонить предложение
+#
+# Интеграция с factions.sk:
+# {rorp::job::UUID} — текущая фракция игрока
+# {rorp::career::UUID::hospital} — уровень должности в больнице
+#
+# Экономика:
+# Требуются Vault и работающий экономический провайдер.
+# Оплата поступает в общий фонд больницы:
+# {rorp::hospital::fund}
+# ============================================================
+
+
+# ============================================================
+# ИНИЦИАЛИЗАЦИЯ
+# ============================================================
+
+on load:
+    if {rorp::hospital::fund} is not set:
+        set {rorp::hospital::fund} to 0
+
+    if {rorp::medcard::counter} is not set:
+        set {rorp::medcard::counter} to 0
+
+    if {rorp::medcard::offer-counter} is not set:
+        set {rorp::medcard::offer-counter} to 0
+
+
+# ============================================================
+# GUI МЕДИЦИНСКОЙ КАРТЫ
+# ============================================================
+
+function rorpOpenMedcard(p: player):
+    set {_uuid} to "%uuid of {_p}%"
+    set {_menu} to a new chest inventory with 3 rows named "&0RoRP &8| &bМедицинская карта"
+
+    # Тёмная основа интерфейса.
+    loop integers from 0 to 26:
+        set slot loop-number of {_menu} to black stained glass pane named " "
+
+    # Голубые акценты по краям.
+    set slot 1 of {_menu} to light blue stained glass pane named " "
+    set slot 3 of {_menu} to light blue stained glass pane named " "
+    set slot 5 of {_menu} to light blue stained glass pane named " "
+    set slot 7 of {_menu} to light blue stained glass pane named " "
+    set slot 9 of {_menu} to light blue stained glass pane named " "
+    set slot 17 of {_menu} to light blue stained glass pane named " "
+    set slot 19 of {_menu} to light blue stained glass pane named " "
+    set slot 25 of {_menu} to light blue stained glass pane named " "
+
+    set slot 4 of {_menu} to beacon named "&b&lRoRP MEDICAL" with lore "&7Электронная медицинская карта" and "&8Городская больница"
+
+    if {rorp::medcard::%{_uuid}%::owned} is true:
+        set {_number} to {rorp::medcard::%{_uuid}%::number}
+        set {_issued} to {rorp::medcard::%{_uuid}%::issued}
+
+        set slot 11 of {_menu} to paper named "&b&lНОМЕР КАРТЫ" with lore "&7Личный номер документа:" and "&f#%{_number}%" and " " and "&8Документ закреплён за владельцем."
+
+        set slot 13 of {_menu} to book named "&b&lДАННЫЕ ВЛАДЕЛЬЦА" with lore "&7Имя: &f%name of {_p}%" and "&7Дата выдачи: &f%{_issued}%" and "&7Учреждение: &fГородская больница"
+
+        set slot 15 of {_menu} to golden apple named "&b&lМЕДИЦИНСКИЙ СТАТУС" with lore "&7Статус карты: &aАктивна" and "&7Раздел диагнозов и травм" and "&7будет подключён следующим этапом."
+
+        set slot 22 of {_menu} to emerald named "&a&lКАРТА АКТИВНА" with lore "&7Медицинский документ оформлен." and "&7Береги своё здоровье!"
+    else:
+        set slot 11 of {_menu} to barrier named "&c&lКАРТА НЕ ОФОРМЛЕНА" with lore "&7У тебя пока нет медицинской карты."
+
+        set slot 13 of {_menu} to book named "&b&lКАК ПОЛУЧИТЬ КАРТУ" with lore "&7Обратись к сотруднику городской" and "&7больницы и попроси оформить карту." and " " and "&7Стоимость оформления: &a$100"
+
+        set slot 15 of {_menu} to paper named "&b&lВОЗМОЖНОСТИ КАРТЫ" with lore "&7Хранение медицинской информации." and "&7История диагнозов и лечения." and "&7Данные о травмах."
+
+        set slot 22 of {_menu} to red stained glass pane named "&cКАРТА ОТСУТСТВУЕТ" with lore "&7Сначала необходимо оформить документ."
+
+    open {_menu} to {_p}
+
+
+# Блокируем перемещение предметов, пока открыто окно карты.
+on inventory click:
+    if name of player's current inventory is "&0RoRP &8| &bМедицинская карта":
+        cancel event
+
+
+# ============================================================
+# МЕДИЦИНСКАЯ КАРТА И ПОКУПКА
+# ============================================================
+
+command /medcard [<text>] [<player>]:
+    trigger:
+        set {_uuid} to "%uuid of player%"
+
+        # ----------------------------------------------------
+        # /medcard — открыть GUI медицинской карты
+        # ----------------------------------------------------
+        if arg-1 is not set:
+            rorpOpenMedcard(player)
+            stop
+
+
+        # ----------------------------------------------------
+        # /medcard sell <игрок> — предложение купить карту
+        # ----------------------------------------------------
+        if arg-1 is "sell":
+            if arg-2 is not set:
+                send "&eИспользование: &f/medcard sell <игрок>" to player
+                stop
+
+            set {_target} to arg-2
+            set {_targetUUID} to "%uuid of {_target}%"
+
+            if {_target} is player:
+                send "&cНельзя предложить медицинскую карту самому себе." to player
+                stop
+
+            # Проверяем, что продавец действительно сотрудник больницы.
+            if {rorp::job::%{_uuid}%} is not "hospital":
+                send "&cПродавать медицинские карты могут только сотрудники больницы." to player
+                stop
+
+            set {_level} to {rorp::career::%{_uuid}%::hospital}
+            if {_level} is not set:
+                set {_level} to 0
+
+            if {_level} < 1:
+                send "&cУ тебя недостаточно полномочий для продажи медицинских карт." to player
+                stop
+
+            if {rorp::rank::hospital::%{_level}%} is not set:
+                send "&cНе удалось определить твою должность. Обратись к администрации." to player
+                stop
+
+            if {rorp::medcard::%{_targetUUID}%::owned} is true:
+                send "&cУ игрока %{_target}% уже есть медицинская карта." to player
+                stop
+
+            if {rorp::medcard::offer::%{_targetUUID}%::id} is set:
+                send "&cУ этого игрока уже есть активное предложение о покупке карты." to player
+                stop
+
+            add 1 to {rorp::medcard::offer-counter}
+            set {_offerID} to {rorp::medcard::offer-counter}
+
+            set {rorp::medcard::offer::%{_targetUUID}%::id} to {_offerID}
+            set {rorp::medcard::offer::%{_targetUUID}%::seller} to {_uuid}
+            set {rorp::medcard::offer::%{_targetUUID}%::seller-name} to "%player%"
+
+            send "&aТы предложил игроку %{_target}% купить медицинскую карту за &f$100&a." to player
+
+            send "&8&m----------------------------------------" to {_target}
+            send "&b&lRoRP &7| &fПРЕДЛОЖЕНИЕ БОЛЬНИЦЫ" to {_target}
+            send "&fСотрудник больницы &b%player% &fпредлагает тебе медицинскую карту." to {_target}
+            send "&7Стоимость: &a$100" to {_target}
+            send "&7Предложение действует 60 секунд." to {_target}
+            send "&a/medcard accept &7— купить карту" to {_target}
+            send "&c/medcard decline &7— отказаться" to {_target}
+            send "&8&m----------------------------------------" to {_target}
+
+            # Автоматически удаляем предложение через 60 секунд,
+            # но только если за это время не появилось новое.
+            wait 60 seconds
+            if {rorp::medcard::offer::%{_targetUUID}%::id} is {_offerID}:
+                delete {rorp::medcard::offer::%{_targetUUID}%::*}
+                loop all players:
+                    if "%uuid of loop-player%" is {_targetUUID}:
+                        send "&cПредложение о покупке медицинской карты истекло." to loop-player
+            stop
+
+
+        # ----------------------------------------------------
+        # /medcard accept — покупка карты
+        # ----------------------------------------------------
+        if arg-1 is "accept":
+            if {rorp::medcard::offer::%{_uuid}%::id} is not set:
+                send "&cУ тебя нет активного предложения о покупке медицинской карты." to player
+                stop
+
+            if {rorp::medcard::%{_uuid}%::owned} is true:
+                delete {rorp::medcard::offer::%{_uuid}%::*}
+                send "&cУ тебя уже есть медицинская карта. Предложение отменено." to player
+                stop
+
+            if player's balance is less than 100:
+                send "&cНедостаточно средств. Для покупки медицинской карты нужно $100." to player
+                stop
+
+            # Списываем деньги только после всех проверок.
+            remove 100 from player's balance
+            add 100 to {rorp::hospital::fund}
+
+            # Создаём постоянную медицинскую карту.
+            add 1 to {rorp::medcard::counter}
+            set {_cardNumber} to {rorp::medcard::counter}
+
+            set {rorp::medcard::%{_uuid}%::owned} to true
+            set {rorp::medcard::%{_uuid}%::number} to {_cardNumber}
+            set {rorp::medcard::%{_uuid}%::issued} to now
+
+            set {_sellerUUID} to {rorp::medcard::offer::%{_uuid}%::seller}
+            delete {rorp::medcard::offer::%{_uuid}%::*}
+
+            send "&aТы успешно приобрёл медицинскую карту!" to player
+            send "&7Номер твоей карты: &f#%{_cardNumber}%" to player
+            send "&7С карты списано: &c$100" to player
+            send "&7Открыть карту: &f/medcard" to player
+
+            # Уведомляем сотрудника, который оформил продажу.
+            loop all players:
+                if "%uuid of loop-player%" is {_sellerUUID}:
+                    send "&aИгрок %{player}% приобрёл медицинскую карту. В фонд больницы поступило $100." to loop-player
+            stop
+
+
+        # ----------------------------------------------------
+        # /medcard decline — отказ от покупки
+        # ----------------------------------------------------
+        if arg-1 is "decline":
+            if {rorp::medcard::offer::%{_uuid}%::id} is not set:
+                send "&cУ тебя нет активного предложения о покупке медицинской карты." to player
+                stop
+
+            set {_sellerUUID} to {rorp::medcard::offer::%{_uuid}%::seller}
+            delete {rorp::medcard::offer::%{_uuid}%::*}
+
+            send "&eТы отказался от покупки медицинской карты." to player
+
+            loop all players:
+                if "%uuid of loop-player%" is {_sellerUUID}:
+                    send "&eИгрок %{player}% отказался от покупки медицинской карты." to loop-player
+            stop
+
+
+        # ----------------------------------------------------
+        # Неизвестная команда
+        # ----------------------------------------------------
+        send "&8&m----------------------------------------" to player
+        send "&b&lRoRP &7| &fМЕДИЦИНСКАЯ СИСТЕМА" to player
+        send "&f/medcard &7— открыть медицинскую карту" to player
+        send "&f/medcard sell <игрок> &7— предложить карту" to player
+        send "&f/medcard accept &7— принять предложение" to player
+        send "&f/medcard decline &7— отклонить предложение" to player
+        send "&8&m----------------------------------------" to player
