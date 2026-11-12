@@ -1,0 +1,416 @@
+
+# ============================================================
+# RoRP — СИСТЕМА ФРАКЦИЙ И LUCKPERMS
+# Skript 2.12 / Paper 1.20.1
+# ============================================================
+
+# ============================================================
+# ФУНКЦИЯ СИНХРОНИЗАЦИИ С LUCKPERMS
+# ============================================================
+
+function rorpUpdateLp(uuid: text, faction: text, oldLevel: number, newLevel: number):
+    set {_oldGroup} to {rorp::lp-group::%{_faction}%::%{_oldLevel}%}
+    set {_newGroup} to {rorp::lp-group::%{_faction}%::%{_newLevel}%}
+
+    if {_oldGroup} is set:
+        execute console command "lp user %{_uuid}% parent remove %{_oldGroup}%"
+
+    if {_newGroup} is set:
+        execute console command "lp user %{_uuid}% parent add %{_newGroup}%"
+
+
+# ============================================================
+# НАСТРОЙКА ФРАКЦИЙ И ДОЛЖНОСТЕЙ
+# ============================================================
+
+on load:
+
+    # Названия фракций
+    set {rorp::faction-name::hospital} to "Больница"
+    set {rorp::faction-name::police} to "Полиция"
+    set {rorp::faction-name::cityhall} to "Мэрия"
+    set {rorp::faction-name::media} to "СМИ"
+
+    # -------------------------
+    # БОЛЬНИЦА
+    # -------------------------
+
+    set {rorp::rank::hospital::1} to "Интерн"
+    set {rorp::rank::hospital::2} to "Санитар"
+    set {rorp::rank::hospital::3} to "Парамедик"
+    set {rorp::rank::hospital::4} to "Врач"
+    set {rorp::rank::hospital::5} to "Хирург"
+    set {rorp::rank::hospital::6} to "Главный врач"
+    set {rorp::rank-count::hospital} to 6
+
+    set {rorp::lp-group::hospital::1} to "hospital_intern"
+    set {rorp::lp-group::hospital::2} to "hospital_sanitar"
+    set {rorp::lp-group::hospital::3} to "hospital_paramedic"
+    set {rorp::lp-group::hospital::4} to "hospital_doctor"
+    set {rorp::lp-group::hospital::5} to "hospital_surgeon"
+    set {rorp::lp-group::hospital::6} to "hospital_chief"
+
+    # -------------------------
+    # ПОЛИЦИЯ
+    # -------------------------
+
+    set {rorp::rank::police::1} to "Кадет"
+    set {rorp::rank::police::2} to "Офицер"
+    set {rorp::rank::police::3} to "Сержант"
+    set {rorp::rank::police::4} to "Капитан"
+    set {rorp::rank::police::5} to "Начальник полиции"
+    set {rorp::rank-count::police} to 5
+
+    set {rorp::lp-group::police::1} to "police_cadet"
+    set {rorp::lp-group::police::2} to "police_officer"
+    set {rorp::lp-group::police::3} to "police_sergeant"
+    set {rorp::lp-group::police::4} to "police_captain"
+    set {rorp::lp-group::police::5} to "police_chief"
+
+    # -------------------------
+    # МЭРИЯ
+    # -------------------------
+
+    set {rorp::rank::cityhall::1} to "Стажёр"
+    set {rorp::rank::cityhall::2} to "Специалист"
+    set {rorp::rank::cityhall::3} to "Заместитель мэра"
+    set {rorp::rank::cityhall::4} to "Мэр"
+    set {rorp::rank-count::cityhall} to 4
+
+    set {rorp::lp-group::cityhall::1} to "cityhall_intern"
+    set {rorp::lp-group::cityhall::2} to "cityhall_specialist"
+    set {rorp::lp-group::cityhall::3} to "cityhall_deputy"
+    set {rorp::lp-group::cityhall::4} to "cityhall_mayor"
+
+    # -------------------------
+    # СМИ
+    # -------------------------
+
+    set {rorp::rank::media::1} to "Стажёр"
+    set {rorp::rank::media::2} to "Журналист"
+    set {rorp::rank::media::3} to "Редактор"
+    set {rorp::rank::media::4} to "Главный редактор"
+    set {rorp::rank-count::media} to 4
+
+    set {rorp::lp-group::media::1} to "media_intern"
+    set {rorp::lp-group::media::2} to "media_journalist"
+    set {rorp::lp-group::media::3} to "media_editor"
+    set {rorp::lp-group::media::4} to "media_chief"
+
+
+# ============================================================
+# ВОССТАНОВЛЕНИЕ ГРУППЫ ПРИ ВХОДЕ ИГРОКА
+# ============================================================
+
+on join:
+    set {_uuid} to "%uuid of player%"
+    set {_faction} to {rorp::job::%{_uuid}%}
+
+    if {_faction} is set:
+        set {_level} to {rorp::career::%{_uuid}%::%{_faction}%}
+
+        if {_level} is set:
+            wait 2 ticks
+            rorpUpdateLp({_uuid}, {_faction}, 0, {_level})
+
+
+# ============================================================
+# УПРАВЛЕНИЕ СОТРУДНИКАМИ
+# ============================================================
+
+command /frak <text> <player>:
+    trigger:
+        set {_action} to arg-1
+        set {_target} to arg-2
+
+        set {_uuid} to "%uuid of player%"
+        set {_targetUUID} to "%uuid of {_target}%"
+
+        set {_faction} to {rorp::job::%{_uuid}%}
+
+        if {_faction} is not set:
+            send "&cТы не состоишь во фракции."
+            stop
+
+        # Проверка полномочий главы
+        if player does not have permission "rorp.admin":
+            if {rorp::leader::%{_faction}%} is not {_uuid}:
+                send "&cУ тебя нет прав главы этой фракции."
+                stop
+
+        # -------------------------
+        # ПРИНЯТИЕ
+        # -------------------------
+
+        if {_action} is "hire":
+
+            if {rorp::job::%{_targetUUID}%} is set:
+                send "&cЭтот игрок уже состоит во фракции."
+                stop
+
+            set {rorp::job::%{_targetUUID}%} to {_faction}
+
+            if {rorp::career::%{_targetUUID}%::%{_faction}%} is not set:
+                set {rorp::career::%{_targetUUID}%::%{_faction}%} to 1
+
+            set {_level} to {rorp::career::%{_targetUUID}%::%{_faction}%}
+            set {_rank} to {rorp::rank::%{_faction}%::%{_level}%}
+
+            rorpUpdateLp({_targetUUID}, {_faction}, 0, {_level})
+
+            send "&aТы принял игрока %{_target}% во фракцию %{rorp::faction-name::%{_faction}%}%." to player
+            send "&aТы принят во фракцию %{rorp::faction-name::%{_faction}%}%!" to {_target}
+            send "&7Твоя должность: &f%{_rank}%" to {_target}
+            stop
+
+        # -------------------------
+        # УВОЛЬНЕНИЕ
+        # -------------------------
+
+        if {_action} is "fire":
+
+            if {rorp::job::%{_targetUUID}%} is not {_faction}:
+                send "&cЭтот игрок не состоит в твоей фракции."
+                stop
+
+            if {rorp::leader::%{_faction}%} is {_targetUUID}:
+                send "&cНельзя уволить главу фракции."
+                stop
+
+            set {_level} to {rorp::career::%{_targetUUID}%::%{_faction}%}
+
+            if {_level} is set:
+                rorpUpdateLp({_targetUUID}, {_faction}, {_level}, 0)
+
+            delete {rorp::job::%{_targetUUID}%}
+
+            send "&cТы уволил игрока %{_target}%." to player
+            send "&cТы был уволен из фракции %{rorp::faction-name::%{_faction}%}%." to {_target}
+            send "&7Твоя предыдущая должность сохранена." to {_target}
+            stop
+
+        # -------------------------
+        # ПОВЫШЕНИЕ
+        # -------------------------
+
+        if {_action} is "promote":
+
+            if {rorp::job::%{_targetUUID}%} is not {_faction}:
+                send "&cЭтот игрок не состоит в твоей фракции."
+                stop
+
+            if {rorp::leader::%{_faction}%} is {_targetUUID}:
+                send "&cНельзя повысить главу фракции."
+                stop
+
+            set {_level} to {rorp::career::%{_targetUUID}%::%{_faction}%}
+            set {_max} to {rorp::rank-count::%{_faction}%}
+
+            if {_level} is not set:
+                set {_level} to 1
+
+            if {_level} >= {_max}:
+                send "&cИгрок уже достиг высшей должности."
+                stop
+
+            set {_oldLevel} to {_level}
+            add 1 to {_level}
+
+            set {rorp::career::%{_targetUUID}%::%{_faction}%} to {_level}
+
+            rorpUpdateLp({_targetUUID}, {_faction}, {_oldLevel}, {_level})
+
+            set {_rank} to {rorp::rank::%{_faction}%::%{_level}%}
+
+            send "&aТы повысил %{_target}% до должности %{_rank}%." to player
+            send "&aТебя повысили!" to {_target}
+            send "&7Новая должность: &f%{_rank}%" to {_target}
+            stop
+
+        # -------------------------
+        # ПОНИЖЕНИЕ
+        # -------------------------
+
+        if {_action} is "demote":
+
+            if {rorp::job::%{_targetUUID}%} is not {_faction}:
+                send "&cЭтот игрок не состоит в твоей фракции."
+                stop
+
+            if {rorp::leader::%{_faction}%} is {_targetUUID}:
+                send "&cНельзя понизить главу фракции."
+                stop
+
+            set {_level} to {rorp::career::%{_targetUUID}%::%{_faction}%}
+
+            if {_level} is not set:
+                set {_level} to 1
+
+            if {_level} <= 1:
+                send "&cИгрок уже находится на низшей должности."
+                stop
+
+            set {_oldLevel} to {_level}
+            remove 1 from {_level}
+
+            set {rorp::career::%{_targetUUID}%::%{_faction}%} to {_level}
+
+            rorpUpdateLp({_targetUUID}, {_faction}, {_oldLevel}, {_level})
+
+            set {_rank} to {rorp::rank::%{_faction}%::%{_level}%}
+
+            send "&cТы понизил %{_target}% до должности %{_rank}%." to player
+            send "&cТебя понизили в должности." to {_target}
+            send "&7Новая должность: &f%{_rank}%" to {_target}
+            stop
+
+        send "&eИспользование: /frak <hire/fire/promote/demote> <игрок>"
+
+
+# ============================================================
+# НАЗНАЧЕНИЕ ГЛАВЫ ФРАКЦИИ
+# ТОЛЬКО АДМИНИСТРАТОР
+# ============================================================
+
+command /frakleader <text> <player> <text>:
+    permission: rorp.admin
+    permission message: &cНедостаточно прав.
+    trigger:
+
+        if arg-1 is not "set":
+            send "&eИспользование: /frakleader set <игрок> <фракция>"
+            stop
+
+        set {_target} to arg-2
+        set {_uuid} to "%uuid of {_target}%"
+        set {_faction} to arg-3
+
+        if {rorp::faction-name::%{_faction}%} is not set:
+            send "&cТакой фракции не существует."
+            stop
+
+        # Снимаем старого главу с руководства
+        set {_oldLeader} to {rorp::leader::%{_faction}%}
+
+        if {_oldLeader} is set:
+            if {_oldLeader} is not {_uuid}:
+                set {_oldMax} to {rorp::rank-count::%{_faction}%}
+                set {_oldLevel} to {_oldMax}
+                set {_newLevel} to {_oldMax}
+                remove 1 from {_newLevel}
+
+                rorpUpdateLp({_oldLeader}, {_faction}, {_oldLevel}, {_newLevel})
+
+                set {rorp::career::%{_oldLeader}%::%{_faction}%} to {_newLevel}
+
+        # Если новый глава работал в другой фракции, снимаем старую группу
+        set {_previousFaction} to {rorp::job::%{_uuid}%}
+
+        if {_previousFaction} is set:
+            if {_previousFaction} is not {_faction}:
+                set {_previousLevel} to {rorp::career::%{_uuid}%::%{_previousFaction}%}
+                if {_previousLevel} is set:
+                    rorpUpdateLp({_uuid}, {_previousFaction}, {_previousLevel}, 0)
+
+        # Назначаем нового главу
+        set {rorp::leader::%{_faction}%} to {_uuid}
+        set {rorp::job::%{_uuid}%} to {_faction}
+
+        set {_max} to {rorp::rank-count::%{_faction}%}
+        set {rorp::career::%{_uuid}%::%{_faction}%} to {_max}
+
+        rorpUpdateLp({_uuid}, {_faction}, 0, {_max})
+
+        set {_rank} to {rorp::rank::%{_faction}%::%{_max}%}
+
+        send "&aИгрок %{_target}% назначен главой фракции %{rorp::faction-name::%{_faction}%}%."
+        send "&6Ты назначен главой фракции %{rorp::faction-name::%{_faction}%}%!" to {_target}
+        send "&7Твоя должность: &f%{_rank}%" to {_target}
+
+
+# ============================================================
+# СНЯТИЕ ГЛАВЫ ФРАКЦИИ
+# ТОЛЬКО АДМИНИСТРАТОР
+# ============================================================
+
+command /frakleaderremove <text>:
+    permission: rorp.admin
+    permission message: &cНедостаточно прав.
+    trigger:
+
+        set {_faction} to arg-1
+
+        if {rorp::faction-name::%{_faction}%} is not set:
+            send "&cНеизвестная фракция."
+            stop
+
+        if {rorp::leader::%{_faction}%} is not set:
+            send "&cУ этой фракции нет главы."
+            stop
+
+        set {_leader} to {rorp::leader::%{_faction}%}
+        set {_oldLevel} to {rorp::rank-count::%{_faction}%}
+        set {_newLevel} to {_oldLevel}
+        remove 1 from {_newLevel}
+
+        rorpUpdateLp({_leader}, {_faction}, {_oldLevel}, {_newLevel})
+
+        set {rorp::career::%{_leader}%::%{_faction}%} to {_newLevel}
+        delete {rorp::leader::%{_faction}%}
+
+        send "&aГлава фракции снят с руководства."
+
+
+# ============================================================
+# АДМИНИСТРАТИВНОЕ НАЗНАЧЕНИЕ РАБОТЫ
+# /rorpjob <игрок> <фракция/none>
+# ============================================================
+
+command /rorpjob <player> <text>:
+    permission: rorp.admin
+    permission message: &cНедостаточно прав.
+    trigger:
+
+        set {_target} to arg-1
+        set {_uuid} to "%uuid of {_target}%"
+        set {_faction} to arg-2
+
+        set {_previousFaction} to {rorp::job::%{_uuid}%}
+
+        if {_faction} is "none":
+
+            if {_previousFaction} is set:
+                set {_level} to {rorp::career::%{_uuid}%::%{_previousFaction}%}
+
+                if {_level} is set:
+                    rorpUpdateLp({_uuid}, {_previousFaction}, {_level}, 0)
+
+            delete {rorp::job::%{_uuid}%}
+
+            send "&aИгрок %{_target}% теперь безработный."
+            send "&cТы больше не состоишь во фракции." to {_target}
+            stop
+
+        if {rorp::faction-name::%{_faction}%} is not set:
+            send "&cНеизвестная фракция."
+            stop
+
+        # Удаляем группу предыдущей фракции
+        if {_previousFaction} is set:
+            if {_previousFaction} is not {_faction}:
+                set {_oldLevel} to {rorp::career::%{_uuid}%::%{_previousFaction}%}
+
+                if {_oldLevel} is set:
+                    rorpUpdateLp({_uuid}, {_previousFaction}, {_oldLevel}, 0)
+
+        set {rorp::job::%{_uuid}%} to {_faction}
+
+        if {rorp::career::%{_uuid}%::%{_faction}%} is not set:
+            set {rorp::career::%{_uuid}%::%{_faction}%} to 1
+
+        set {_level} to {rorp::career::%{_uuid}%::%{_faction}%}
+
+        rorpUpdateLp({_uuid}, {_faction}, 0, {_level})
+
+        send "&aТы назначил игроку %{_target}% работу: %{rorp::faction-name::%{_faction}%}%."
+        send "&aТвоё место работы: %{rorp::faction-name::%{_faction}%}%." to {_target}
